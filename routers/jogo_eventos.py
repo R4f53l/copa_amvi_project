@@ -11,11 +11,12 @@ from models.usuario import Usuario
 from schemas.jogoeventoschema import JogoEventoSchema
 from models.papelevento import PapelEvento
 from models.eventoparticipante import EventoParticipante
+from services.evento_consequencia import MAPA_EVENTOS
 jogo_eventos_router = APIRouter(prefix = "/jogo_eventos", tags=["jogo_eventos"])
 
 
 @jogo_eventos_router.post("/registrar_evento/{id_jogo}")
-async def registrar_evento (id_jogo: int, evento_schema: JogoEventoSchema, session: Session = Depends(get_db), usuario: Usuario = Depends(verificar_admin)):
+async def registrar_evento(id_jogo: int, evento_schema: JogoEventoSchema, session: Session = Depends(get_db), usuario: Usuario = Depends(verificar_admin)):
 
     jogo = session.query(Jogo).filter(Jogo.id_jogo == id_jogo).first()
     if not jogo:
@@ -24,18 +25,41 @@ async def registrar_evento (id_jogo: int, evento_schema: JogoEventoSchema, sessi
     tipo_evento = session.query(TipoEvento).filter(TipoEvento.id_tipo_evento == evento_schema.tipo_evento).first()
     if not tipo_evento:
         raise HTTPException(status_code=404, detail="Tipo de evento não encontrado")
-
-    novo_evento = EventoJogo(id_jogo=id_jogo, id_tipo_evento=evento_schema.tipo_evento, minuto_ocorrido=evento_schema.minuto, descricao=None, criado_por=usuario.id)
+    
+    novo_evento = EventoJogo(
+        id_jogo=id_jogo, 
+        id_tipo_evento=evento_schema.tipo_evento, 
+        minuto_ocorrido=evento_schema.minuto, 
+        criado_por=usuario.id
+    )
     session.add(novo_evento)
-    session.commit()
-    session.refresh(novo_evento)
-
+    session.flush() # O flush gera o ID do evento sem fechar a transação
+    
     for p in evento_schema.participantes:
-        evento_participante = EventoParticipante(id_evento_jogo=novo_evento.id_evento_jogo, id_time=p.id_time, id_jogador_time=p.id_jogador, papel_id=p.papel)
-        session.add(evento_participante)
-    session.commit()
+        participante = EventoParticipante(
+            id_evento_jogo=novo_evento.id_evento_jogo, 
+            id_time=p.id_time, 
+            id_jogador_time=p.id_jogador, 
+            papel_id=p.papel
+        )
+        session.add(participante)
 
-    return {"message": "Evento registrado com sucesso!", "evento": novo_evento}
+    
+    funcao_acao = MAPA_EVENTOS.get(tipo_evento.acao_slug) 
+    if funcao_acao:        
+        funcao_acao(session, jogo, evento_schema, tipo_evento)
+
+    
+    session.commit()
+    session.refresh(jogo) 
+
+    return {
+        "message": "Evento registrado com sucesso!", 
+        "placar_atual": {
+            "casa": jogo.gols_time_casa, 
+            "visitante": jogo.gols_time_visitante
+        }
+    }
 
     
 
