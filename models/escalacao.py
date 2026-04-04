@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, ForeignKey, Boolean
 from database import Base
-
+from sqlalchemy.orm import relationship
 class Escalacao(Base):
     __tablename__ = "escalacoes"
 
@@ -10,4 +10,5 @@ class Escalacao(Base):
     titular = Column(Boolean, default = False)  # 1 para titular, 0 para reserva
 
     #relationship
+    jogador_time = relationship("JogadorTime", back_populates="escalacao")
     

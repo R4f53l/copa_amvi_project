@@ -1,5 +1,6 @@
+from typing import List
 from datetime import datetime, timezone
-
+from models.escalacao import Escalacao
 from fastapi import APIRouter, Depends, HTTPException
 from core.security import verificar_admin
 from database import get_db
@@ -9,8 +10,11 @@ from models.eventoparticipante import EventoParticipante
 from models.time import Time
 from models.tipoevento import TipoEvento
 from models.usuario import Usuario
+from schemas.escalacaoschema import EscalacaoSchema
 from schemas.jogo_schema import Jogo_Schema
 from models.jogo import Jogo
+from models.jogadortime import JogadorTime
+
 
 jogos_router = APIRouter(prefix = "/jogos", tags = ["jogos"])
 
@@ -144,7 +148,7 @@ async def sumula_jogo(id_jogo: int, session: Session = Depends(get_db)):
     if not jogo:
         raise HTTPException(status_code=404, detail="Jogo não encontrado")
 
-    # Agora montamos o JSON usando o que já está na memória (sem novos selects)
+    
     return {
         "id_jogo": jogo.id_jogo,
         "placar": f"{jogo.time_casa.nome} {jogo.gols_time_casa} x {jogo.gols_time_visitante} {jogo.time_visitante.nome}",
@@ -156,10 +160,42 @@ async def sumula_jogo(id_jogo: int, session: Session = Depends(get_db)):
                 "descricao": ev.descricao,
                 "participantes": [
                     {
-                        "nome": p.jogador.nome if p.jogador else "N/A",
+                        "nome": p.jogador.jogador.nome if p.jogador else "N/A",
                         "papel": p.papel.nome
                     } for p in ev.participantes
                 ]
             } for ev in sorted(jogo.eventos, key=lambda x: x.minuto_ocorrido)
         ]
     }
+
+
+@jogos_router.post("/escalacao/{id_jogo}")
+async def definir_escalacao (id_jogo: int, escalacao: List[EscalacaoSchema], session: Session = Depends(get_db), usuario: Usuario = Depends(verificar_admin)):
+    jogo = session.query(Jogo).filter(Jogo.id_jogo == id_jogo).first()
+    if not jogo:
+        raise HTTPException(status_code=404, detail="Jogo não encontrado")    
+
+    for item in escalacao: 
+        nova_escalacao = Escalacao(id_jogo=item.id_jogo, id_jogador=item.id_jogador, titular=item.titular)
+        session.add(nova_escalacao)    
+    session.commit()
+    return {"message": "Escalação definida com sucesso!"}
+
+@jogos_router.get("/escalacao/{id_jogo}")
+async def obter_escalacao(id_jogo: int, session: Session = Depends(get_db)): 
+    # Usamos o joinedload em cadeia para trazer tudo de uma vez
+    escalacao = session.query(Escalacao).options(
+        joinedload(Escalacao.jogador_time).joinedload(JogadorTime.jogador)
+    ).filter(Escalacao.id_jogo == id_jogo).all()
+
+    if not escalacao:
+        raise HTTPException(status_code=404, detail="Escalação não encontrada")
+    
+    # Agora acessamos os dados como atributos do objeto
+    return [
+        {
+            "nome": item.jogador_time.jogador.nome,
+            "titular": item.titular,
+            "Nome do Time": item.jogador_time.time.nome # Se você tiver essa coluna na escalação
+        } for item in escalacao
+    ]

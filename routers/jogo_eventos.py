@@ -56,8 +56,8 @@ async def registrar_evento(id_jogo: int, evento_schema: JogoEventoSchema, sessio
     return {
         "message": "Evento registrado com sucesso!", 
         "placar_atual": {
-            "casa": jogo.gols_time_casa, 
-            "visitante": jogo.gols_time_visitante
+            jogo.time_casa.nome: jogo.gols_time_casa, 
+            jogo.time_visitante.nome: jogo.gols_time_visitante
         }
     }
 

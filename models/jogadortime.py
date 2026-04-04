@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Date, Integer, ForeignKey
 from database import Base
-
+from sqlalchemy.orm import relationship
 class JogadorTime(Base):
     __tablename__ = "jogadores_times"
 
@@ -11,3 +11,8 @@ class JogadorTime(Base):
     numero_camisa = Column(Integer, nullable=False)
     data_inicio = Column(Date, nullable = False)
     data_fim = Column(Date, nullable = True)
+
+    #relationship
+    jogador = relationship("Jogador", foreign_keys=[id_jogador])
+    escalacao = relationship("Escalacao", back_populates="jogador_time")
+    time = relationship("Time", foreign_keys=[id_time])
