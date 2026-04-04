@@ -8,3 +8,6 @@ class Escalacao(Base):
     id_jogo = Column(ForeignKey("jogos.id_jogo"), nullable=False)
     id_jogador = Column(ForeignKey("jogadores_times.id_jogador_time"), nullable=False)
     titular = Column(Boolean, default = False)  # 1 para titular, 0 para reserva
+
+    #relationship
+    

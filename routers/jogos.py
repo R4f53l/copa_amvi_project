@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from core.security import verificar_admin
 from database import get_db
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from models.eventojogo import EventoJogo
+from models.eventoparticipante import EventoParticipante
 from models.time import Time
+from models.tipoevento import TipoEvento
 from models.usuario import Usuario
 from schemas.jogo_schema import Jogo_Schema
 from models.jogo import Jogo
@@ -63,43 +65,51 @@ async def finalizar_jogo(id_jogo: int, session: Session = Depends(get_db), usuar
     return {"message": "Jogo finalizado com sucesso!", "id_jogo": id_jogo}
 
 
+from sqlalchemy.orm import joinedload
+
 @jogos_router.get("/listar_jogos_em_andamento")
 async def listar_jogos_em_andamento(session: Session = Depends(get_db)):
-    jogos_em_andamento = session.query(Jogo).filter(Jogo.status == "em_andamento").all()
-    resultado = []
-    for jogo in jogos_em_andamento:
-        time_casa = session.query(Time).filter(Time.id_time == jogo.id_time_casa).first()
-        time_visitante = session.query(Time).filter(Time.id_time == jogo.id_time_visitante).first()
-        resultado.append({
+    # O joinedload diz ao SQLAlchemy: "Já traz os objetos Time junto com o Jogo"
+    jogos = session.query(Jogo).options(
+        joinedload(Jogo.time_casa),
+        joinedload(Jogo.time_visitante)
+    ).filter(Jogo.status == "em_andamento").all()
+
+    # Agora o loop apenas lê o que já está na memória (Zero novas consultas ao banco!)
+    return [
+        {
             "id_jogo": jogo.id_jogo,
-            "time_casa": time_casa.nome,
+            "time_casa": jogo.time_casa.nome,
             "gols_time_casa": jogo.gols_time_casa,
-            "time_visitante": time_visitante.nome,
+            "time_visitante": jogo.time_visitante.nome,
             "gols_time_visitante": jogo.gols_time_visitante,
             "data_hora": jogo.data_hora,
             "fase": jogo.fase,
             "grupo": jogo.grupo
-        })
-    return resultado
+        } for jogo in jogos
+    ]
 
 @jogos_router.get("/listar_jogos_agendados")
 async def listar_jogos_agendados(session: Session = Depends(get_db)):
-    jogos_agendados = session.query(Jogo).filter(Jogo.status == "agendado").all()
-    resultado = []
-    for jogo in jogos_agendados:
-        time_casa = session.query(Time).filter(Time.id_time == jogo.id_time_casa).first()
-        time_visitante = session.query(Time).filter(Time.id_time == jogo.id_time_visitante).first()
-        resultado.append({
+    # O joinedload diz ao SQLAlchemy: "Já traz os objetos Time junto com o Jogo"
+    jogos = session.query(Jogo).options(
+        joinedload(Jogo.time_casa),
+        joinedload(Jogo.time_visitante)
+    ).filter(Jogo.status == "agendado").all()
+
+    # Agora o loop apenas lê o que já está na memória (Zero novas consultas ao banco!)
+    return [
+        {
             "id_jogo": jogo.id_jogo,
-            "time_casa": time_casa.nome,
+            "time_casa": jogo.time_casa.nome,
             "gols_time_casa": jogo.gols_time_casa,
-            "time_visitante": time_visitante.nome,
+            "time_visitante": jogo.time_visitante.nome,
             "gols_time_visitante": jogo.gols_time_visitante,
             "data_hora": jogo.data_hora,
             "fase": jogo.fase,
             "grupo": jogo.grupo
-        })
-    return resultado
+        } for jogo in jogos
+    ]
 
 @jogos_router.get("/listar_jogos_finalizados")
 async def listar_jogos_finalizados(session: Session = Depends(get_db)):
@@ -122,23 +132,34 @@ async def listar_jogos_finalizados(session: Session = Depends(get_db)):
 
 @jogos_router.get("/sumula_jogo/{id_jogo}")
 async def sumula_jogo(id_jogo: int, session: Session = Depends(get_db)):
-    jogo = session.query(Jogo).filter(Jogo.id_jogo == id_jogo).first()
-    if not jogo: 
-        raise HTTPException(status_code=404, detail="Jogo não encontrado")
-    
-    time_casa = session.query(Time).filter(Time.id_time == jogo.id_time_casa).first()
-    time_visitante = session.query(Time).filter(Time.id_time == jogo.id_time_visitante).first() 
-    eventos = session.query(EventoJogo).filter(EventoJogo.id_jogo == id_jogo).all()
-    sumula = {
-        "id_jogo": jogo.id_jogo,
-        "time_casa": time_casa.nome,
-        "gols_time_casa": jogo.gols_time_casa,
-        "time_visitante": time_visitante.nome,
-        "gols_time_visitante": jogo.gols_time_visitante,
-        "data_hora": jogo.data_hora,
-        "fase": jogo.fase,
-        "grupo": jogo.grupo,
-        "eventos": []
-    }
+    # Buscamos o jogo e JÁ TRAZEMOS os times, eventos e participantes numa tacada só
+    jogo = session.query(Jogo).options(
+        joinedload(Jogo.time_casa),
+        joinedload(Jogo.time_visitante),
+        joinedload(Jogo.eventos).joinedload(EventoJogo.tipo_evento),
+        joinedload(Jogo.eventos).joinedload(EventoJogo.participantes).joinedload(EventoParticipante.jogador),
+        joinedload(Jogo.eventos).joinedload(EventoJogo.participantes).joinedload(EventoParticipante.papel)
+    ).filter(Jogo.id_jogo == id_jogo).first()
 
-    return sumula
+    if not jogo:
+        raise HTTPException(status_code=404, detail="Jogo não encontrado")
+
+    # Agora montamos o JSON usando o que já está na memória (sem novos selects)
+    return {
+        "id_jogo": jogo.id_jogo,
+        "placar": f"{jogo.time_casa.nome} {jogo.gols_time_casa} x {jogo.gols_time_visitante} {jogo.time_visitante.nome}",
+        "status": jogo.status,
+        "eventos": [
+            {
+                "minuto": ev.minuto_ocorrido,
+                "tipo": ev.tipo_evento.nome,
+                "descricao": ev.descricao,
+                "participantes": [
+                    {
+                        "nome": p.jogador.nome if p.jogador else "N/A",
+                        "papel": p.papel.nome
+                    } for p in ev.participantes
+                ]
+            } for ev in sorted(jogo.eventos, key=lambda x: x.minuto_ocorrido)
+        ]
+    }

@@ -1,5 +1,6 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from database import Base
+from sqlalchemy.orm import relationship
 
 class Jogo(Base):
     __tablename__ = "jogos"
@@ -19,3 +20,8 @@ class Jogo(Base):
     status = Column(String, default="agendado", nullable=False)
     inicio_real = Column(DateTime, nullable=True)
     fim_real = Column(DateTime, nullable=True)
+
+    time_casa = relationship("Time", foreign_keys=[id_time_casa]) #isso permite acessar o time usando jogo.time_casa
+    time_visitante = relationship("Time", foreign_keys=[id_time_visitante])
+
+    eventos = relationship("EventoJogo", back_populates="jogo") #isso permite acessar os eventos do jogo usando jogo.eventos e posteriormente acessar jogo usando evento.jogo
